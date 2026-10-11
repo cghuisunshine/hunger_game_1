@@ -1,0 +1,6 @@
+.DS_Store
+.deps/
+.playwright-mcp/
+__pycache__/
+*.py[cod]
+.reader-build/
