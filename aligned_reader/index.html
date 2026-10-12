@@ -176,6 +176,17 @@
       } catch { return null; }
     }
 
+    function seekToWord(word, autoplay = true) {
+      if (!word) return;
+      // Keep the clicked word still while seeking so a second click hits it.
+      audio.pause();
+      pendingStartTime = null;
+      audio.currentTime = word.start;
+      updateTimes(word.start);
+      saveProgress(word.id, word.start);
+      if (autoplay) audio.play();
+    }
+
     function renderParagraph(paragraph) {
       const node = document.createElement('p');
       node.className = 'paragraph';
@@ -189,24 +200,23 @@
         span.textContent = paragraph.text.slice(word.startChar, word.endChar);
         span.addEventListener('click', (event) => {
           event.stopPropagation();
-          pendingStartTime = null;
-          audio.currentTime = word.start;
-          updateHighlight(word.start);
-          saveProgress(word.id, word.start);
-          audio.play();
+          seekToWord(word);
+        });
+        span.addEventListener('dblclick', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          seekToWord(word, false);
         });
         node.append(span);
         cursor = word.endChar;
       });
       if (cursor < paragraph.text.length) node.append(document.createTextNode(paragraph.text.slice(cursor)));
       node.addEventListener('click', () => {
-        const word = paragraph.words[0];
-        if (!word) return;
-        pendingStartTime = null;
-        audio.currentTime = word.start;
-        updateHighlight(word.start);
-        saveProgress(word.id, word.start);
-        audio.play();
+        seekToWord(paragraph.words[0]);
+      });
+      node.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        seekToWord(paragraph.words[0], false);
       });
       return node;
     }
