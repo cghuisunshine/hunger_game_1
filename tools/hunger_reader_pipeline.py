@@ -324,8 +324,8 @@ def build_reader_html(manifest: dict) -> str:
     * {{ box-sizing: border-box; }}
     html {{ scroll-behavior: smooth; }}
     body {{ margin:0; background:var(--bg); color:var(--text); font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif; font-size:16px; line-height:1.65; }}
-    button,input {{ font:inherit; }}
-    button:focus-visible,input:focus-visible {{ outline:3px solid rgba(138,75,22,.26); outline-offset:2px; }}
+    button,input,select {{ font:inherit; }}
+    button:focus-visible,input:focus-visible,select:focus-visible {{ outline:3px solid rgba(138,75,22,.26); outline-offset:2px; }}
     .app {{ min-height:100vh; display:grid; grid-template-columns:256px minmax(0,1fr); }}
     aside {{ height:100vh; position:sticky; top:0; overflow:auto; border-right:1px solid var(--line); background:var(--surface); padding:20px 14px 100px; }}
     .book-title {{ margin:0; font-size:16px; font-weight:750; line-height:1.3; }}
@@ -344,10 +344,11 @@ def build_reader_html(manifest: dict) -> str:
     .tts-word {{ border-radius:3px; cursor:pointer; transition:background-color 120ms ease,color 120ms ease; }}
     .tts-word:hover {{ background:#f0eee9; }}
     .tts-word.is-speaking {{ background:var(--active); color:#111827; }}
-    .player {{ position:fixed; left:256px; right:0; bottom:0; z-index:4; display:grid; grid-template-columns:auto auto auto minmax(120px,1fr) auto; align-items:center; gap:10px; padding:12px 20px; border-top:1px solid var(--line); background:rgba(255,255,255,.97); }}
+    .player {{ position:fixed; left:256px; right:0; bottom:0; z-index:4; display:grid; grid-template-columns:auto auto auto minmax(120px,1fr) auto auto; align-items:center; gap:10px; padding:12px 20px; border-top:1px solid var(--line); background:rgba(255,255,255,.97); }}
     .control {{ min-height:36px; padding:0 12px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--text); cursor:pointer; font-weight:700; }}
     .control:hover {{ background:var(--soft); }}
     .control.primary {{ min-width:70px; border-color:var(--button); background:var(--button); color:#fff; }}
+    .speed-control {{ min-width:72px; padding:0 6px; }}
     input[type="range"] {{ width:100%; accent-color:var(--accent); }}
     .search-button {{ position:fixed; right:20px; bottom:76px; z-index:5; width:44px; height:44px; display:grid; place-items:center; border:1px solid var(--button); border-radius:8px; background:var(--button); color:#fff; cursor:pointer; }}
     .search-button:hover {{ background:#44403c; }}
@@ -355,7 +356,14 @@ def build_reader_html(manifest: dict) -> str:
     @media (max-width:760px) {{
       .app {{ display:block; }} aside {{ position:static; height:auto; max-height:230px; border-right:0; border-bottom:1px solid var(--line); padding-bottom:16px; }}
       main {{ padding:20px 14px 126px; }} .reader {{ padding:22px 18px; }} .topbar {{ align-items:flex-start; flex-direction:column; gap:4px; }}
-      .player {{ left:0; grid-template-columns:auto auto auto; }} .player input[type="range"] {{ grid-column:1/-1; }} .search-button {{ right:14px; bottom:116px; }}
+      .player {{ left:0; }} .search-button {{ right:14px; }}
+    }}
+    @media (max-width:1100px) {{
+      .player {{ grid-template-columns:auto auto auto minmax(72px,1fr); padding:12px 14px; }}
+      .player input[type="range"] {{ grid-column:1/4; grid-row:2; }}
+      .player .time {{ grid-column:4; grid-row:2; font-size:12px; text-align:right; }}
+      .speed-control {{ grid-column:4; grid-row:1; width:100%; }}
+      .search-button {{ bottom:112px; }}
     }}
   </style>
 </head>
@@ -377,6 +385,16 @@ def build_reader_html(manifest: dict) -> str:
     <button class="control" id="nextButton" type="button">Next</button>
     <input id="seekBar" type="range" min="0" max="1000" value="0" aria-label="Seek">
     <span class="time" id="chapterTime">0:00</span>
+    <select class="control speed-control" id="speedSelect" aria-label="Playback speed" title="Playback speed">
+      <option value="0.75">0.75×</option>
+      <option value="1" selected>1×</option>
+      <option value="1.1">1.1×</option>
+      <option value="1.2">1.2×</option>
+      <option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option>
+      <option value="1.75">1.75×</option>
+      <option value="2">2×</option>
+    </select>
   </div>
   <button class="search-button" id="searchButton" type="button" aria-label="Search text" title="Search (Ctrl/Cmd+F)">
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m16.5 16.5 4 4"></path></svg>
@@ -395,10 +413,27 @@ def build_reader_html(manifest: dict) -> str:
     const timeLabel = document.getElementById('timeLabel');
     const chapterTime = document.getElementById('chapterTime');
     const searchButton = document.getElementById('searchButton');
+    const speedSelect = document.getElementById('speedSelect');
+    const speedStorageKey = 'hunger-games-aligned-reader-speed-v1';
+    const playbackSpeeds = Array.from(speedSelect.options, (option) => Number(option.value));
     const progressStorageKey = 'hunger-games-aligned-reader-progress-v1';
     let currentIndex = 0;
     let currentParagraphId = null;
     let pendingStartTime = null;
+
+    function setPlaybackSpeed(value) {{
+      const rate = playbackSpeeds.includes(Number(value)) ? Number(value) : 1;
+      speedSelect.value = String(rate);
+      audio.defaultPlaybackRate = rate;
+      audio.playbackRate = rate;
+      audio.preservesPitch = true;
+    }}
+
+    function restorePlaybackSpeed() {{
+      let saved = null;
+      try {{ saved = localStorage.getItem(speedStorageKey); }} catch {{}}
+      setPlaybackSpeed(saved);
+    }}
 
     function formatTime(seconds) {{
       seconds = Math.max(0, Math.floor(seconds || 0));
@@ -540,6 +575,7 @@ def build_reader_html(manifest: dict) -> str:
       currentParagraphId = null;
       pendingStartTime = null;
       audio.src = chapter.audio;
+      setPlaybackSpeed(speedSelect.value);
       chapterTitle.textContent = chapter.title;
       reader.textContent = '';
       chapter.paragraphs.forEach((paragraph) => reader.appendChild(renderParagraph(paragraph)));
@@ -595,6 +631,10 @@ def build_reader_html(manifest: dict) -> str:
     prevButton.addEventListener('click', () => loadChapter(currentIndex - 1, !audio.paused));
     nextButton.addEventListener('click', () => loadChapter(currentIndex + 1, !audio.paused));
     searchButton.addEventListener('click', promptSearch);
+    speedSelect.addEventListener('change', () => {{
+      setPlaybackSpeed(speedSelect.value);
+      try {{ localStorage.setItem(speedStorageKey, speedSelect.value); }} catch {{}}
+    }});
     document.addEventListener('keydown', (event) => {{
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {{ event.preventDefault(); promptSearch(); }}
     }});
@@ -620,6 +660,7 @@ def build_reader_html(manifest: dict) -> str:
       updateTimes();
     }});
     audio.addEventListener('ended', () => {{ if (currentIndex < manifest.chapters.length - 1) loadChapter(currentIndex + 1, true); }});
+    restorePlaybackSpeed();
     loadInitialChapter();
   </script>
 </body>
