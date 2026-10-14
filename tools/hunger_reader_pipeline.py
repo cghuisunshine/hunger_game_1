@@ -335,10 +335,10 @@ def build_reader_html(manifest: dict) -> str:
     .chapter-link:hover {{ background:var(--soft); }}
     .chapter-link.active {{ background:#e7e1d8; font-weight:700; }}
     main {{ min-width:0; padding:28px 30px 116px; }}
-    .topbar {{ max-width:820px; margin:0 auto 18px; display:flex; align-items:baseline; justify-content:space-between; gap:16px; }}
+    .topbar {{ max-width:820px; margin:0 auto 18px; padding-right:56px; display:flex; align-items:baseline; justify-content:space-between; gap:16px; }}
     h1 {{ margin:0; font-size:22px; line-height:1.3; }}
     .time {{ color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; font-size:14px; }}
-    .reader {{ max-width:820px; margin:0 auto; padding:30px 36px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }}
+    .reader {{ max-width:820px; margin:0 auto; padding:30px 36px; border:1px solid var(--line); border-radius:8px; background:var(--surface); font-size:var(--reader-font-size,16px); overflow-wrap:break-word; }}
     .paragraph {{ margin:0 0 1em; padding:2px 5px; border-left:3px solid transparent; border-radius:4px; cursor:pointer; }}
     .paragraph:hover {{ background:#faf8f5; }}
     .tts-word {{ border-radius:3px; cursor:pointer; transition:background-color 120ms ease,color 120ms ease; }}
@@ -353,8 +353,20 @@ def build_reader_html(manifest: dict) -> str:
     .search-button {{ position:fixed; right:20px; bottom:76px; z-index:5; width:44px; height:44px; display:grid; place-items:center; border:1px solid var(--button); border-radius:8px; background:var(--button); color:#fff; cursor:pointer; }}
     .search-button:hover {{ background:#44403c; }}
     .search-button svg {{ width:20px; height:20px; stroke:currentColor; }}
+    [hidden] {{ display:none !important; }}
+    .settings-button {{ position:fixed; top:18px; right:20px; z-index:8; width:44px; height:44px; display:grid; place-items:center; padding:0; background:var(--surface); }}
+    .settings-button svg {{ width:22px; height:22px; stroke:currentColor; }}
+    .settings-panel {{ position:fixed; top:72px; right:20px; z-index:8; width:min(280px,calc(100vw - 28px)); max-height:calc(100dvh - 90px); overflow:auto; padding:20px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:0 12px 36px rgba(28,25,23,.14); }}
+    .settings-panel h2 {{ margin:0 0 18px; font-size:18px; }}
+    .font-size-label {{ display:flex; justify-content:space-between; gap:12px; font-weight:650; }}
+    .settings-panel input[type="range"] {{ margin:14px 0 20px; }}
+    .settings-panel fieldset {{ margin:0; padding:0; border:0; }}
+    .settings-panel legend {{ margin-bottom:8px; font-weight:650; }}
+    .audio-option {{ display:flex; align-items:center; gap:10px; padding:7px 0; cursor:pointer; }}
+    .audio-option input {{ margin:0; accent-color:var(--accent); }}
     @media (max-width:760px) {{
       .app {{ display:block; }} aside {{ position:static; height:auto; max-height:230px; border-right:0; border-bottom:1px solid var(--line); padding-bottom:16px; }}
+      .book-title,.author {{ padding-right:56px; }}
       main {{ padding:20px 14px 126px; }} .reader {{ padding:22px 18px; }} .topbar {{ align-items:flex-start; flex-direction:column; gap:4px; }}
       .player {{ left:0; }} .search-button {{ right:14px; }}
     }}
@@ -365,9 +377,30 @@ def build_reader_html(manifest: dict) -> str:
       .speed-control {{ grid-column:4; grid-row:1; width:100%; }}
       .search-button {{ bottom:112px; }}
     }}
+    body[data-audio-display="hidden"] .player {{ display:none; }}
+    body[data-audio-display="hidden"] .search-button {{ bottom:20px; }}
+    body[data-audio-display="hidden"] main {{ padding-bottom:80px; }}
+    body[data-audio-display="speed"] .player {{ left:auto; right:20px; bottom:16px; grid-template-columns:auto; padding:8px; border:1px solid var(--line); border-radius:9px; }}
+    body[data-audio-display="speed"] .player > :not(.speed-control) {{ display:none; }}
+    body[data-audio-display="speed"] .speed-control {{ grid-column:auto; grid-row:auto; width:88px; }}
+    body[data-audio-display="speed"] .search-button {{ bottom:88px; }}
   </style>
 </head>
 <body>
+  <button class="control settings-button" id="settingsButton" type="button" aria-label="Reading settings" aria-controls="settingsPanel" aria-expanded="false" title="Reading settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+  </button>
+  <section class="settings-panel" id="settingsPanel" aria-labelledby="settingsTitle" hidden>
+    <h2 id="settingsTitle">Reading settings</h2>
+    <label class="font-size-label" for="fontSizeInput">Font size <output id="fontSizeValue" for="fontSizeInput">16 px</output></label>
+    <input id="fontSizeInput" type="range" min="14" max="30" step="1" value="16">
+    <fieldset>
+      <legend>Audio controls</legend>
+      <label class="audio-option"><input type="radio" name="audioDisplay" value="full" checked> Show all controls</label>
+      <label class="audio-option"><input type="radio" name="audioDisplay" value="speed"> Speed only</label>
+      <label class="audio-option"><input type="radio" name="audioDisplay" value="hidden"> Hide controls</label>
+    </fieldset>
+  </section>
   <div class="app">
     <aside>
       <p class="book-title">{title}</p>
@@ -414,12 +447,48 @@ def build_reader_html(manifest: dict) -> str:
     const chapterTime = document.getElementById('chapterTime');
     const searchButton = document.getElementById('searchButton');
     const speedSelect = document.getElementById('speedSelect');
+    const settingsButton = document.getElementById('settingsButton');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const fontSizeInput = document.getElementById('fontSizeInput');
+    const fontSizeValue = document.getElementById('fontSizeValue');
+    const audioDisplayInputs = Array.from(document.querySelectorAll('input[name="audioDisplay"]'));
+    const settingsStorageKey = 'hunger-games-aligned-reader-settings-v1';
     const speedStorageKey = 'hunger-games-aligned-reader-speed-v1';
     const playbackSpeeds = Array.from(speedSelect.options, (option) => Number(option.value));
     const progressStorageKey = 'hunger-games-aligned-reader-progress-v1';
     let currentIndex = 0;
     let currentParagraphId = null;
     let pendingStartTime = null;
+
+    function applyReadingSettings(settings = {{}}) {{
+      const size = Number(settings?.fontSize);
+      const fontSize = Number.isInteger(size) && size >= 14 && size <= 30 ? size : 16;
+      const audioDisplay = ['full', 'speed', 'hidden'].includes(settings?.audioDisplay) ? settings.audioDisplay : 'full';
+      document.documentElement.style.setProperty('--reader-font-size', `${{fontSize}}px`);
+      document.body.dataset.audioDisplay = audioDisplay;
+      fontSizeInput.value = String(fontSize);
+      fontSizeValue.textContent = `${{fontSize}} px`;
+      audioDisplayInputs.forEach((input) => input.checked = input.value === audioDisplay);
+    }}
+
+    function saveReadingSettings() {{
+      const settings = {{ fontSize:Number(fontSizeInput.value), audioDisplay:audioDisplayInputs.find((input) => input.checked)?.value || 'full' }};
+      applyReadingSettings(settings);
+      try {{ localStorage.setItem(settingsStorageKey, JSON.stringify(settings)); }} catch {{}}
+    }}
+
+    function restoreReadingSettings() {{
+      let settings = {{}};
+      try {{ settings = JSON.parse(localStorage.getItem(settingsStorageKey) || '{{}}'); }} catch {{}}
+      applyReadingSettings(settings);
+    }}
+
+    function setSettingsOpen(open, returnFocus = false) {{
+      settingsPanel.hidden = !open;
+      settingsButton.setAttribute('aria-expanded', String(open));
+      if (open) fontSizeInput.focus();
+      else if (returnFocus) settingsButton.focus();
+    }}
 
     function setPlaybackSpeed(value) {{
       const rate = playbackSpeeds.includes(Number(value)) ? Number(value) : 1;
@@ -631,11 +700,21 @@ def build_reader_html(manifest: dict) -> str:
     prevButton.addEventListener('click', () => loadChapter(currentIndex - 1, !audio.paused));
     nextButton.addEventListener('click', () => loadChapter(currentIndex + 1, !audio.paused));
     searchButton.addEventListener('click', promptSearch);
+    settingsButton.addEventListener('click', () => setSettingsOpen(settingsPanel.hidden));
+    fontSizeInput.addEventListener('input', saveReadingSettings);
+    audioDisplayInputs.forEach((input) => input.addEventListener('change', saveReadingSettings));
+    document.addEventListener('click', (event) => {{
+      if (!settingsPanel.hidden && !settingsPanel.contains(event.target) && !settingsButton.contains(event.target)) setSettingsOpen(false);
+    }});
+    document.addEventListener('focusin', (event) => {{
+      if (!settingsPanel.hidden && !settingsPanel.contains(event.target) && !settingsButton.contains(event.target)) setSettingsOpen(false);
+    }});
     speedSelect.addEventListener('change', () => {{
       setPlaybackSpeed(speedSelect.value);
       try {{ localStorage.setItem(speedStorageKey, speedSelect.value); }} catch {{}}
     }});
     document.addEventListener('keydown', (event) => {{
+      if (event.key === 'Escape' && !settingsPanel.hidden) {{ event.preventDefault(); setSettingsOpen(false, true); }}
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {{ event.preventDefault(); promptSearch(); }}
     }});
     seekBar.addEventListener('input', () => {{
@@ -660,6 +739,7 @@ def build_reader_html(manifest: dict) -> str:
       updateTimes();
     }});
     audio.addEventListener('ended', () => {{ if (currentIndex < manifest.chapters.length - 1) loadChapter(currentIndex + 1, true); }});
+    restoreReadingSettings();
     restorePlaybackSpeed();
     loadInitialChapter();
   </script>
